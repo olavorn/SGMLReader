@@ -1,20 +1,22 @@
 /*
  * 
- * Copyright (c) 2007-2011 MindTouch. All rights reserved.
+ * Copyright (c) 2007-2013 MindTouch. All rights reserved.
  * www.mindtouch.com  oss@mindtouch.com
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * For community documentation and downloads visit wiki.developer.mindtouch.com;
+ * please review the licensing section.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  * 
  */
 
@@ -748,10 +750,66 @@ namespace Sgml {
         /// <returns>The string for the character entity.</returns>
         public string ExpandCharEntity()
         {
-            char ch = ReadChar();
+            string value;
+            int v = ReadNumericEntityCode(out value);
+            if(v == -1)
+            {
+                return value;
+            }
+
+            // HACK ALERT: IE and Netscape map the unicode characters 
+            if (this.m_isHtml && v >= 0x80 & v <= 0x9F)
+            {
+                // This range of control characters is mapped to Windows-1252!
+                int i = v - 0x80;
+                int unicode = CtrlMap[i];
+                return Convert.ToChar(unicode).ToString();
+            }
+
+            if (0xD800 <= v && v <= 0xDBFF)
+            {
+                // high surrogate
+                if (m_lastchar == '&')
+                {
+                    char ch = ReadChar();
+                    if (ch == '#')
+                    {
+                        string value2;
+                        int v2 = ReadNumericEntityCode(out value2);
+                        if(v2 == -1)
+                        {
+                            return value + ";" + value2;
+                        }
+                        if (0xDC00 <= v2 && v2 <= 0xDFFF)
+                        {
+                            // low surrogate
+                            v = char.ConvertToUtf32((char)v, (char)v2);
+                        }
+                    }
+                    else
+                    {
+                        Error("Premature {0} parsing surrogate pair", ch);
+                    }
+                }
+                else
+                {
+                    Error("Premature {0} parsing surrogate pair", m_lastchar);
+                }
+            }
+
+            // NOTE (steveb): we need to use ConvertFromUtf32 to allow for extended numeric encodings
+            return char.ConvertFromUtf32(v);
+        }
+
+        private int ReadNumericEntityCode(out string value)
+        {
             int v = 0;
+            char ch = ReadChar();
+            value = "&#";
             if (ch == 'x')
             {
+                bool sawHexDigit = false;
+                value += "x";
                 ch = ReadChar();
                 for (; ch != Entity.EOF && ch != ';'; ch = ReadChar())
                 {
@@ -759,61 +817,62 @@ namespace Sgml {
                     if (ch >= '0' && ch <= '9')
                     {
                         p = (int)(ch - '0');
+                        sawHexDigit = true;
                     } 
                     else if (ch >= 'a' && ch <= 'f')
                     {
-                        p = (int)(ch-'a')+10;
+                        p = (int)(ch - 'a') + 10;
+                        sawHexDigit = true;
                     } 
                     else if (ch >= 'A' && ch <= 'F')
                     {
-                        p = (int)(ch-'A')+10;
+                        p = (int)(ch - 'A') + 10;
+                        sawHexDigit = true;
                     }
                     else
                     {
-                        break;//we must be done!
+                        break; //we must be done!
                         //Error("Hex digit out of range '{0}'", (int)ch);
                     }
-
-                    v = (v * 16) + p;
+                    value += ch;
+                    v = (v*16) + p;
+                }
+                if (!sawHexDigit)
+                {
+                    return -1;
                 }
             } 
             else
             {
+                bool sawDigit = false;
                 for (; ch != Entity.EOF && ch != ';'; ch = ReadChar())
                 {
                     if (ch >= '0' && ch <= '9')
                     {
-                        v = (v * 10) + (int)(ch - '0');
+                        v = (v*10) + (int)(ch - '0');
+                        sawDigit = true;
                     } 
                     else
                     {
                         break; // we must be done!
                         //Error("Decimal digit out of range '{0}'", (int)ch);
                     }
+                    value += ch;
+                }
+                if (!sawDigit)
+                {
+                    return -1;
                 }
             }
-
             if (ch == 0)
             {
                 Error("Premature {0} parsing entity reference", ch);
             }
             else if (ch == ';')
             {
-                ReadChar(); 
+                ReadChar();
             }
-
-            // HACK ALERT: IE and Netscape map the unicode characters 
-            if (this.m_isHtml && v >= 0x80 & v <= 0x9F)
-            {
-                // This range of control characters is mapped to Windows-1252!
-                int size = CtrlMap.Length;
-                int i = v - 0x80;
-                int unicode = CtrlMap[i];
-                return Convert.ToChar(unicode).ToString();
-            }
-
-            // NOTE (steveb): we need to use ConvertFromUtf32 to allow for extended numeric encodings
-            return char.ConvertFromUtf32(v);
+            return v;
         }
 
         static int[] CtrlMap = new int[] {
@@ -2669,8 +2728,6 @@ namespace Sgml {
 
         char ParseDeclComment(bool full)
         {
-            int start = this.m_current.Line;
-            // -^-...--
             // This method scans over a comment inside a markup declaration.
             char ch = this.m_current.ReadChar();
             if (full && ch != '-') this.m_current.Error("Expecting comment delimiter '--' but found {0}", ch);
@@ -2706,8 +2763,6 @@ namespace Sgml {
 
         void ParseIgnoreSection()
         {
-            int start = this.m_current.Line;
-            // <!-^-...-->
             char ch = this.m_current.SkipWhitespace();
             if (ch != '[') this.m_current.Error("Expecting '[' but found {0}", ch);
             this.m_current.ScanToEnd(this.m_sb, "Conditional Section", "]]>");
@@ -2735,7 +2790,7 @@ namespace Sgml {
         private Entity ParseParameterEntity(string term)
         {
             // almost the same as this.current.ScanToken, except we also terminate on ';'
-            char ch = this.m_current.ReadChar();
+            this.m_current.ReadChar();
             string name =  this.m_current.ScanToken(this.m_sb, ";"+term, false);
             if (this.m_current.Lastchar == ';') 
                 this.m_current.ReadChar();

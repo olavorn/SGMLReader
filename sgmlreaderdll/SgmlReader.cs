@@ -10,21 +10,24 @@
  */
 
 /*
- * Copyright (c) 2007-2011 MindTouch. All rights reserved.
+ * 
+ * Copyright (c) 2007-2013 MindTouch. All rights reserved.
  * www.mindtouch.com  oss@mindtouch.com
  *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * For community documentation and downloads visit wiki.developer.mindtouch.com;
+ * please review the licensing section.
  *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  *
  */
 
@@ -473,7 +476,7 @@ namespace Sgml
                     }
                     else
                     {
-                        baseUri = new Uri(new Uri(Directory.GetCurrentDirectory() + "\\"), this.m_syslit);
+                        baseUri = new Uri(new Uri(Directory.GetCurrentDirectory() + "/"), this.m_syslit);
                     }
                     this.m_dtd = SgmlDtd.Parse(baseUri, this.m_docType, this.m_pubid, baseUri.AbsoluteUri, this.m_subset, this.m_proxy, null);
                 }
@@ -1172,8 +1175,9 @@ namespace Sgml
         {
             get
             {
-                if (this.m_state == State.Attr || this.m_state == State.AttrValue) 
-                    return 0;
+                if (this.m_state == State.Attr || this.m_state == State.AttrValue)
+                    //For compatibility with mono
+                    return this.m_node.AttributeCount;
                 else if (this.m_node.NodeType == XmlNodeType.Element || this.m_node.NodeType == XmlNodeType.DocumentType)
                     return this.m_node.AttributeCount;
                 else
@@ -1305,8 +1309,9 @@ namespace Sgml
             if (a != null)
             {
                 this.m_apos = i;
-                this.m_a = a;
-                if (this.m_state != State.Attr)
+                this.m_a = a; 
+                //Make sure that AttrValue does not overwrite the preserved value
+                if (this.m_state != State.Attr && this.m_state != State.AttrValue)
                 {
                     this.m_node.CurrentState = this.m_state; //save current state.
                 }
@@ -1441,7 +1446,6 @@ namespace Sgml
                 OpenInput();
             }
 
-            State start = this.m_state;
             if (m_node.Simulated)
             {
                 // return the next node
@@ -1486,7 +1490,6 @@ namespace Sgml
                         {
                             Pop();
                         }
-                        Node n = this.m_node;
                         foundnode = ParseMarkup();
                         break;
                     case State.PartialTag:
